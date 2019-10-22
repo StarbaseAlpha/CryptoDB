@@ -1,0 +1,26 @@
+{
+  "name": "@starbase/cryptodb",
+  "version": "0.0.1",
+  "description": "Starbase Encrypted Database",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/starbasealpha/cryptodb.git"
+  },
+  "keywords": [
+    "encrypted",
+    "database",
+    "db",
+    "starbase",
+    "encryption"
+  ],
+  "author": "Mike Fuller",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/starbasealpha/cryptodb/issues"
+  },
+  "homepage": "https://github.com/starbasealpha/cryptodb#readme"
+}

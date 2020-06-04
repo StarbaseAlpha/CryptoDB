@@ -242,7 +242,7 @@ function CryptoDB(cryptic, datastore, memstore, secretKey, passwordKey) {
     let items = await datastore.list({"values":true});
     let recovered = [];
     for (let i = 0; i < items.length; i++) {
-      if (items[i].value && items[i].value.split('.').length === 5) {
+      if (items[i].value && typeof items[i].value === 'string' && items[i].value.split('.').length === 5) {
         let parts = items[i].value.split('.');
         let path = await cryptic.decrypt(parts[3] + '.' + parts[4], RECOVERY).catch(err=>{return null;});
         if (path && items[i].key !== path) {

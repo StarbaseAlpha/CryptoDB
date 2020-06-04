@@ -4,6 +4,7 @@ function CryptoDB(cryptic, datastore, memstore, secretKey, passwordKey) {
 
   let SECRET = null;
   let PASSWORD = null;
+  let RECOVERY = null;
 
   const files = datastore;
   const index = memstore;
@@ -32,6 +33,7 @@ function CryptoDB(cryptic, datastore, memstore, secretKey, passwordKey) {
 
     SECRET = cryptic.decode(await cryptic.kdf(cryptic.fromText(secretKey), cryptic.fromText(passwordKey), cryptic.fromText('SECRET'), 256));
     PASSWORD = cryptic.decode(await cryptic.kdf(cryptic.fromText(passwordKey), cryptic.fromText(secretKey), cryptic.fromText('PASSWORD'), 256));
+    RECOVERY = cryptic.decode(await cryptic.kdf(PASSWORD, SECRET, cryptic.fromText('RECOVERY'), 256));
 
     loading = true;
 
@@ -80,7 +82,8 @@ function CryptoDB(cryptic, datastore, memstore, secretKey, passwordKey) {
     let key = await cryptic.decode(bits).slice(0, 32);
     let ad = await cryptic.decode(bits).slice(32, 64);
     let encrypted = await cryptic.encrypt(JSON.stringify(data), key, ad);
-    let payload = cryptic.encode(random) + '.' + encrypted;
+    let recovery = await cryptic.encrypt(path, RECOVERY);
+    let payload = cryptic.encode(random) + '.' + encrypted + '.' + recovery;
     return payload;
   };
 
@@ -235,6 +238,22 @@ function CryptoDB(cryptic, datastore, memstore, secretKey, passwordKey) {
     return true;
   };
 
+  const recoverIndex = async () => {
+    let items = await datastore.list({"values":true});
+    let recovered = [];
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].value && items[i].value.split('.').length === 5) {
+        let parts = items[i].value.split('.');
+        let path = await cryptic.decrypt(parts[3] + '.' + parts[4], RECOVERY).catch(err=>{return null;});
+        if (path && items[i].key !== path) {
+          recovered.push(path);
+        }
+      }
+    }
+    let imported = await importIndex(recovered);
+    return imported;
+  };
+
   Load();
 
   return {
@@ -248,6 +267,7 @@ function CryptoDB(cryptic, datastore, memstore, secretKey, passwordKey) {
     "onEvent": datastore.onEvent,
     "exportIndex": exportIndex,
     "importIndex": importIndex,
+    "recoverIndex": recoverIndex,
     "hashPath": hashPath,
     "raw": datastore
   };

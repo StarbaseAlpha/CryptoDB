@@ -1,6 +1,6 @@
 {
   "name": "@starbase/cryptodb",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Starbase Encrypted Database",
   "main": "index.js",
   "scripts": {

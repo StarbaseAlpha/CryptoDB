@@ -238,6 +238,12 @@ function CryptoDB(cryptic, datastore, memstore, secretKey, passwordKey) {
     return true;
   };
 
+  const deleteIndex = async () => {
+    await files.del(indexName);
+    await index.deleteDB();
+    return true;    
+  };
+
   const recoverIndex = async () => {
     let items = await datastore.list({"values":true});
     let recovered = [];
@@ -268,6 +274,7 @@ function CryptoDB(cryptic, datastore, memstore, secretKey, passwordKey) {
     "exportIndex": exportIndex,
     "importIndex": importIndex,
     "recoverIndex": recoverIndex,
+    "deleteIndex": deleteIndex,
     "hashPath": hashPath,
     "raw": datastore
   };

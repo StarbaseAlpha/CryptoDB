@@ -1,15 +1,15 @@
 'use strict';
 
-function CryptoDB(cryptic, datastore, memstore, secretKey, passwordKey) {
+function CryptoDB(cryptic, datastore, memstore, secretKey, passwordKey, recoverOnLoad=false, autosaveIndex=false) {
 
   let SECRET = null;
   let PASSWORD = null;
   let RECOVERY = null;
+  let indexName = null;
 
   const files = datastore;
   const index = memstore;
 
-  let indexName = null;
   let loading = false;
   let loaded = false;
   let saving = false;
@@ -30,19 +30,23 @@ function CryptoDB(cryptic, datastore, memstore, secretKey, passwordKey) {
     if (loading) {
       return resume();
     }
+    loading = true;
 
     SECRET = cryptic.decode(await cryptic.kdf(cryptic.fromText(secretKey), cryptic.fromText(passwordKey), cryptic.fromText('SECRET'), 256));
     PASSWORD = cryptic.decode(await cryptic.kdf(cryptic.fromText(passwordKey), cryptic.fromText(secretKey), cryptic.fromText('PASSWORD'), 256));
     RECOVERY = cryptic.decode(await cryptic.kdf(PASSWORD, SECRET, cryptic.fromText('RECOVERY'), 256));
-
-    loading = true;
-
+ 
     indexName = await cryptic.kdf(SECRET, PASSWORD, cryptic.fromText('INDEX'), 256);
     let indexExists = (await files.get(indexName)).value;
     if (indexExists) {
       let decrypted = await Decrypt(indexName, indexExists);
       await index.importDB(decrypted);
     }
+
+    if (recoverOnLoad) {
+      await recoverIndex();
+    }
+
     loaded = true;
     loading = false;
     return loaded;
@@ -57,24 +61,6 @@ function CryptoDB(cryptic, datastore, memstore, secretKey, passwordKey) {
     });
   };
 
-  const save = async (force=false) => {
-    if (saving && !force) {
-      unsaved = true;
-      return true;
-    }
-    unsaved = false;
-    saving = true;
-    return Encrypt(indexName, await index.exportDB()).then(encryptedFS=>{
-      files.put(indexName, encryptedFS).then(async ok=>{
-        saving = false;
-        if (unsaved) {
-          return save(true);
-        }
-        return true;
-      });
-    });
-  };
-
   const Encrypt = async (path, data) => {
     let random = cryptic.random(32);
     let salt = cryptic.combine(random, cryptic.fromText(path));
@@ -82,7 +68,8 @@ function CryptoDB(cryptic, datastore, memstore, secretKey, passwordKey) {
     let key = await cryptic.decode(bits).slice(0, 32);
     let ad = await cryptic.decode(bits).slice(32, 64);
     let encrypted = await cryptic.encrypt(JSON.stringify(data), key, ad);
-    let recovery = await cryptic.encrypt(path, RECOVERY);
+    let recover = await cryptic.kdf(RECOVERY, random, cryptic.fromText("RECOVER"), 256)
+    let recovery = await cryptic.encrypt(path, cryptic.decode(recover));
     let payload = cryptic.encode(random) + '.' + encrypted + '.' + recovery;
     return payload;
   };
@@ -207,7 +194,6 @@ function CryptoDB(cryptic, datastore, memstore, secretKey, passwordKey) {
     let deleted = await files.deleteDB();
     await index.deleteDB();
     loaded = false;
-    indexName = null;
     let e = {
       "event": "deleteDB",
       "timestamp":Date.now()
@@ -215,17 +201,33 @@ function CryptoDB(cryptic, datastore, memstore, secretKey, passwordKey) {
     return deleted;
   };
 
-  const exportIndex = async () => {
-    if (!loaded) {
-      await Load();
+  const saveIndex = async (force=false) => {
+    if (saving && !force) {
+      unsaved = true;
+      return true;
     }
-    return index.list();
+    unsaved = false;
+    saving = true;
+    return Encrypt(indexName, await index.exportDB()).then(encryptedFS=>{
+      return files.put(indexName, encryptedFS).then(async ok=>{
+        saving = false;
+        if (unsaved) {
+          return save(true);
+        }
+        return true;
+      });
+    });
+  };
+
+  const save = async () => {
+    if (autosaveIndex) {
+      return saveIndex();
+    } else {
+      return true;
+    }
   };
 
   const importIndex = async (indexData) => {
-    if (!loaded) {
-      await Load();
-    }
     let promises = [];
     for(let i = 0; i < indexData.length; i++) {
       promises.push(hashPath(indexData[i]).then(result=>{
@@ -236,6 +238,13 @@ function CryptoDB(cryptic, datastore, memstore, secretKey, passwordKey) {
     await index.importDB(results);
     await save();
     return true;
+  };
+
+  const exportIndex = async () => {
+    if (!loaded) {
+      await Load();
+    }
+    return index.list();
   };
 
   const deleteIndex = async () => {
@@ -250,7 +259,9 @@ function CryptoDB(cryptic, datastore, memstore, secretKey, passwordKey) {
     for (let i = 0; i < items.length; i++) {
       if (items[i].value && typeof items[i].value === 'string' && items[i].value.split('.').length === 5) {
         let parts = items[i].value.split('.');
-        let path = await cryptic.decrypt(parts[3] + '.' + parts[4], RECOVERY).catch(err=>{return null;});
+        let random = parts[0];
+        let recover = await cryptic.kdf(RECOVERY, cryptic.decode(random), cryptic.fromText("RECOVER"), 256);
+        let path = await cryptic.decrypt(parts[3] + '.' + parts[4], cryptic.decode(recover)).catch(err=>{return null;});
         if (path && items[i].key !== path) {
           recovered.push(path);
         }
@@ -270,11 +281,12 @@ function CryptoDB(cryptic, datastore, memstore, secretKey, passwordKey) {
     "importDB": importDB,
     "exportDB": exportDB,
     "deleteDB": deleteDB,
+    "importIndex":importIndex,
+    "exportIndex":exportIndex,
+    "saveIndex":saveIndex,
+    "deleteIndex":deleteIndex,
+    "recoverIndex":recoverIndex,
     "onEvent": datastore.onEvent,
-    "exportIndex": exportIndex,
-    "importIndex": importIndex,
-    "recoverIndex": recoverIndex,
-    "deleteIndex": deleteIndex,
     "hashPath": hashPath,
     "raw": datastore
   };
